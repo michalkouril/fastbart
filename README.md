@@ -11,7 +11,27 @@ predict(fit, newdata)                                                # returns a
 
 pfit <- fpbart(x.train, y01, ndpost = 100, nskip = 1000)            # same arguments as BART::pbart
 predict(pfit, newdata)$prob.test                                     # returns a "pbart" object
+
+ct <- compile_trees(fit)                                             # any wbart/pbart/fwbart/fpbart fit
+f7 <- predict_draw(ct, newdata, 7)                                   # = pwbart(newdata, fit$treedraws, fit$mu)[7, ]
 ```
+
+## Fast single-draw prediction
+
+Simulations that step through posterior draws one at a time (e.g. a g-formula forward simulation) often call
+`pwbart()` on a single draw thousands of times; each call re-parses the tree text and rebuilds the model matrix.
+`compile_trees(fit)` parses a fit's trees once into flat arrays; `predict_draw(ct, newdata, m)` then evaluates draw `m` in
+C++ directly on the columns of a data frame or matrix (constant columns dropped as in the fit; for a probit fit, take
+`pnorm()` of the result).
+
+The results are identical to `pwbart()[m, ]`: the same comparison (`x < cutpoint` goes left) and the same summation
+order over trees. Each node's two children are stored next to each other, so a step is branch-free, and trees are
+evaluated tree-outer and row-inner so the CPU overlaps many rows: 2.16x faster than a row-outer loop on the same layout
+(600 predictions, n = 5,237, 200 trees).
+
+In the g-formula pipeline below, using these for the per-draw predictions (plus replacing an `apply(..., cumprod)` with
+a column loop) made the forward simulation of one replicate 3.4x faster (36.1 s to 10.5 s, both run side by side) with
+byte-identical output.
 
 ## What is the same as `BART::wbart` / `BART::pbart`
 
@@ -83,7 +103,8 @@ The whole-pipeline gain is smaller than the per-model 2.66x because the titer fi
 `pbart` hazard model (about 17%) and the R simulation (about 14%) are untouched. Pipeline results agree: point estimates
 within 0.015 across all 18 reported differences, bootstrap SDs within about 7%, and identical bootstrap-interval coverage
 of the true values (17 of 18 in both). The fwbart run had extra background load (FPGA builds, load average about 4); a
-back-to-back rerun of the wbart baseline under the same conditions is pending.
+back-to-back rerun of the wbart baseline under the same conditions is pending, as is a full run with all three changes
+(`fwbart`, `fpbart`, fast prediction).
 
 ## Source
 
