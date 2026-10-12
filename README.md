@@ -1,16 +1,19 @@
 # fastbart
 
-Drop-in replacement for `BART::wbart()` (continuous outcome, optional weights `w`), using the same sampler
-restructured for speed.
+Drop-in replacements for `BART::wbart()` (continuous outcome, optional weights `w`) and `BART::pbart()` (binary outcome,
+probit), using the same samplers restructured for speed.
 
 ```r
 # remotes::install_github("michalkouril/fastbart")
 library(fastbart)
 fit <- fwbart(x.train, y.train, w = wt, ndpost = 100, nskip = 1000)   # same arguments as BART::wbart
 predict(fit, newdata)                                                # returns a "wbart" object: BART's predict()/pwbart() work
+
+pfit <- fpbart(x.train, y01, ndpost = 100, nskip = 1000)            # same arguments as BART::pbart
+predict(pfit, newdata)$prob.test                                     # returns a "pbart" object
 ```
 
-## What is the same as `BART::wbart`
+## What is the same as `BART::wbart` / `BART::pbart`
 
 - Preprocessing in R is identical: `bartModelMatrix()` (cutpoints, constant-column removal), the `lm()`-based `sigest`,
   `lambda` from `sigdf`/`sigquant`, `tau` from `k`.
@@ -18,6 +21,10 @@ predict(fit, newdata)                                                # returns a
   (mu) draws with per-observation weights, inverse-chi-square sigma draw.
 - Returned object: `sigma` (all `nskip + ndpost` draws), `yhat.train`, `yhat.train.mean`, `treedraws` (cutpoints + trees in
   BART's text format), `varcount`, `varprob`, `mu`, `rm.const`, `proc.time`; class `"wbart"`.
+- `fpbart`: pbart's latent-variable sampler (z redrawn every iteration from BART's truncated-normal sampler, sigma fixed at 1),
+  pbart's defaults (`ntree = 50`, `tau = 3/(k*sqrt(ntree))`, `binaryOffset = qnorm(mean(y))`). Returned object: `yhat.train`
+  (with offset), `prob.train`, `prob.train.mean`, `treedraws`, `varcount`, `varprob`, `binaryOffset`, `rm.const`,
+  `proc.time`; class `"pbart"`.
 
 ## What is different
 
@@ -26,7 +33,7 @@ predict(fit, newdata)                                                # returns a
   `BART::wbart` makes about four tree-traversal passes per tree.
 - Its own random-number generator (xoshiro128\*\*, Box-Muller, Marsaglia-Tsang), so draws are not bit-identical to
   `BART::wbart` for the same `set.seed()`; R's RNG only seeds it. Results agree statistically (see below).
-- Not supported, so the call falls back to `BART::wbart` with a warning: `sparse = TRUE` (DART), `x.test`, `n > 8192`,
+- Not supported, so the call falls back to `BART::wbart` with a warning: `sparse = TRUE` (DART), `x.test`, `n > 65536`,
   more than 32 predictors, `ntree > 200`, more than 255 cutpoints, or extra arguments. Trees are capped at 64 nodes
   (counted in `fit$moves[3]`; never reached in testing).
 
@@ -45,6 +52,19 @@ session and pinned to the same core, 2 rounds.
 Agreement with `BART::wbart` (posterior mean of f): correlation 0.992-0.998, the same range as two `BART::wbart` runs with
 different seeds (0.993-0.997). Posterior mean sigma is within 1.2%.
 `predict()` on an `fwbart` fit reproduces its `yhat.train` to 1e-9.
+
+`fpbart`: censoring-hazard model from the same pipeline (n = 24,139 person-weeks, p = 3, ntree = 50, nskip = 1000,
+ndpost = 100), 2 rounds alternating, same core:
+
+| | per fit |
+|---|---|
+| `BART::pbart` | 21.4 s |
+| `fastbart::fpbart` | 5.4 s |
+| speed-up | **3.95x** |
+
+Agreement (posterior mean probability per row): correlation with `BART::pbart` 0.9873, versus 0.9864 between two
+`BART::pbart` runs with different seeds; mean predicted probability 0.0883 vs 0.0880 (observed 0.0889). `predict()` on an
+`fpbart` fit reproduces its `prob.train` to 1e-10.
 
 ### Full pipeline: patient bootstrap of a BART g-formula
 
