@@ -46,6 +46,25 @@ Agreement with `BART::wbart` (posterior mean of f): correlation 0.992-0.998, the
 different seeds (0.993-0.997). Posterior mean sigma is within 1.2%.
 `predict()` on an `fwbart` fit reproduces its `yhat.train` to 1e-9.
 
+### Full pipeline: patient bootstrap of a BART g-formula
+
+The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline (also: a CBPS model, a
+`pbart` censoring-hazard model and a forward simulation in R, all unchanged). Swapping `wbart` for `fastbart::fwbart`
+in the titer fits (a one-line change), B = 100 resamples + the original data (101 replicates), 10 replicates in parallel,
+nskip = 1000, ndpost = 100, on an i9-14900K (32 threads):
+
+| | wall time, 101 replicates |
+|---|---|
+| `BART::wbart` | 24.2 min |
+| `fastbart::fwbart` | 16.0 min |
+| speed-up | **1.51x** |
+
+The whole-pipeline gain is smaller than the per-model 2.66x because the titer fits are about 65% of a replicate; the
+`pbart` hazard model (about 17%) and the R simulation (about 14%) are untouched. Pipeline results agree: point estimates
+within 0.015 across all 18 reported differences, bootstrap SDs within about 7%, and identical bootstrap-interval coverage
+of the true values (17 of 18 in both). The fwbart run had extra background load (FPGA builds, load average about 4); a
+back-to-back rerun of the wbart baseline under the same conditions is pending.
+
 ## Source
 
 `src/bart_kernel.cpp` is shared with an FPGA (Vitis HLS) version of the same sampler; in this package it is compiled
