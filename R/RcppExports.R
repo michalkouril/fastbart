@@ -5,3 +5,11 @@ fbart_cpp <- function(q, y, wt, ybin, numcut, pgtab, ntree, nskip, ndpost, tau, 
     .Call(`_fastbart_fbart_cpp`, q, y, wt, ybin, numcut, pgtab, ntree, nskip, ndpost, tau, lambda, nu, sigest, seed, probit, offset)
 }
 
+compile_trees_cpp <- function(trees, cutpoints) {
+    .Call(`_fastbart_compile_trees_cpp`, trees, cutpoints)
+}
+
+predict_draw_cpp <- function(ct, newdata, m, mu) {
+    .Call(`_fastbart_predict_draw_cpp`, ct, newdata, m, mu)
+}
+

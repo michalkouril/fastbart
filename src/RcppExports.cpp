@@ -36,9 +36,37 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compile_trees_cpp
+Rcpp::List compile_trees_cpp(std::string trees, Rcpp::List cutpoints);
+RcppExport SEXP _fastbart_compile_trees_cpp(SEXP treesSEXP, SEXP cutpointsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type trees(treesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type cutpoints(cutpointsSEXP);
+    rcpp_result_gen = Rcpp::wrap(compile_trees_cpp(trees, cutpoints));
+    return rcpp_result_gen;
+END_RCPP
+}
+// predict_draw_cpp
+Rcpp::NumericVector predict_draw_cpp(Rcpp::List ct, Rcpp::List newdata, int m, double mu);
+RcppExport SEXP _fastbart_predict_draw_cpp(SEXP ctSEXP, SEXP newdataSEXP, SEXP mSEXP, SEXP muSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type ct(ctSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type newdata(newdataSEXP);
+    Rcpp::traits::input_parameter< int >::type m(mSEXP);
+    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
+    rcpp_result_gen = Rcpp::wrap(predict_draw_cpp(ct, newdata, m, mu));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_fastbart_fbart_cpp", (DL_FUNC) &_fastbart_fbart_cpp, 16},
+    {"_fastbart_compile_trees_cpp", (DL_FUNC) &_fastbart_compile_trees_cpp, 2},
+    {"_fastbart_predict_draw_cpp", (DL_FUNC) &_fastbart_predict_draw_cpp, 4},
     {NULL, NULL, 0}
 };
 
