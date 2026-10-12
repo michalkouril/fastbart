@@ -1,3 +1,4 @@
 useDynLib(fastbart, .registration = TRUE)
 importFrom(Rcpp, sourceCpp)
 export(fwbart)
+export(fpbart)

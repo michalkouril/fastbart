@@ -237,11 +237,40 @@ static int count_goodvars(const Tree& t, int x, const int nc[PMAX], int p) {
 
 static inline float lh(float b, float M, float t2) { float k = b * t2 + 1.f; return -0.5f * LOGF(k) + 0.5f * M * M * t2 / k; }
 
+#ifdef FAST_CPU
+// truncated normal N(mean, 1) restricted to > tau (BART's rtnorm)
+static double rtnorm(double mean, double tau, Rng& r) {
+  double z;
+  tau = tau - mean;
+  if (tau <= 0.) {
+    do { z = rnorm(r); } while (z < tau);
+  } else {
+    double lambda = 0.5 * (tau + sqrt(tau * tau + 4.0));
+    do { z = -log((double)unif(r)) / lambda + tau; } while ((double)unif(r) > exp(-0.5 * (z - lambda) * (z - lambda)));
+  }
+  return z + mean;
+}
+#endif
+
 // ---------------------------------------------------------------- top
+#ifdef FAST_CPU
 extern "C" void bart_wfit(const uint8_t* qin, const float* yin, const float* wtin, const int* numcut, const float* pgtab,
                           float* sigma_out, float* trmean_out, uint64_t* trees_out,
                           int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
                           unsigned seed, int keep_trees, int* stats_out) {
+  bart_fit_cpu(qin, yin, wtin, numcut, pgtab, sigma_out, trmean_out, trees_out, n, p, m, nskip, ndpost, tau, lambda, nu, sigest,
+               seed, keep_trees, stats_out, 0, nullptr, 0.f);
+}
+extern "C" void bart_fit_cpu(const uint8_t* qin, const float* yin, const float* wtin, const int* numcut, const float* pgtab,
+                             float* sigma_out, float* trmean_out, uint64_t* trees_out,
+                             int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
+                             unsigned seed, int keep_trees, int* stats_out, int probit, const int* ybin, float offset) {
+#else
+extern "C" void bart_wfit(const uint8_t* qin, const float* yin, const float* wtin, const int* numcut, const float* pgtab,
+                          float* sigma_out, float* trmean_out, uint64_t* trees_out,
+                          int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
+                          unsigned seed, int keep_trees, int* stats_out) {
+#endif
 #pragma HLS INTERFACE m_axi port=qin offset=slave bundle=gmem0 depth=262144
 #pragma HLS INTERFACE m_axi port=yin offset=slave bundle=gmem0 depth=8192
 #pragma HLS INTERFACE m_axi port=wtin offset=slave bundle=gmem0 depth=8192
@@ -311,6 +340,10 @@ INIT_TREES:
 
   Rng rng; rng.s0 = seed ^ 0x9E3779B9u; rng.s1 = seed * 2654435761u + 1u; rng.s2 = 0x6A09E667u ^ (seed << 7); rng.s3 = 0xBB67AE85u + seed;
   for (int i = 0; i < 16; i++) rng_next(rng);
+#ifdef FAST_CPU
+  if (probit)    // latent z (pbart: f excludes binaryOffset)
+    for (int i = 0; i < n; i++) Y[i % KL][i / KL] = ybin[i] == 0 ? -rtnorm(0., offset, rng) : rtnorm(0., -offset, rng);
+#endif
 
   const float t2 = tau * tau, a_prior = 1.f / t2, pb = 0.5f;
   double sigma = sigest;
@@ -466,8 +499,18 @@ ITER:
     for (int s = 0; s < NODES; s++) dummy.th[s] = 0;
     do_pass(m - 1, m, pu, true, dummy, false, true, keep, n, st);
     pu.mode = 0;
-    double rss = (double)st.rss;
-    sigma = SQRTD((nu * lambda + rss) / (2.0 * rgamma_big(rng, (n + nu) / 2.0)));
+#ifdef FAST_CPU
+    if (probit) {    // sigma stays 1; redraw the latent z given the current fit
+      for (int i = 0; i < n; i++) {
+        double f = AF[i % KL][i / KL];
+        Y[i % KL][i / KL] = ybin[i] == 0 ? -rtnorm(-f, offset, rng) : rtnorm(f, -offset, rng);
+      }
+    } else
+#endif
+    {
+      double rss = (double)st.rss;
+      sigma = SQRTD((nu * lambda + rss) / (2.0 * rgamma_big(rng, (n + nu) / 2.0)));
+    }
     sigma_out[it] = (float)sigma;
     if (keep && keep_trees) {
       int base = (it - nskip) * m * NODES;

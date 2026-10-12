@@ -12,14 +12,22 @@
 #include <ap_fixed.h>
 #endif
 
-#define NMAX   8192      // max training rows
+#ifdef FAST_CPU
+#define NMAX   65536     // max training rows (CPU build)
+#else
+#define NMAX   8192      // max training rows (FPGA build: on-chip memory)
+#endif
 #define PMAX   32        // max predictors
 #define MMAX   200       // max trees
 #define NODES  64        // node slots per tree
 #ifndef KL
 #define KL     16        // lanes (rows per clock)
 #endif
+#ifdef FAST_CPU
+#define NL     (NMAX / KL + 24)   // padded lane stride: avoids every lane mapping to the same cache sets
+#else
 #define NL     (NMAX / KL)
+#endif
 #define MAXDEPTH 24
 
 #ifdef FAST_CPU
@@ -46,3 +54,12 @@ extern "C" void bart_wfit(const uint8_t* qin,      // [p][n] cutpoint rank of x:
                           uint64_t* trees_out,     // [ndpost][m][NODES] packed nodes (if keep_trees)
                           int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
                           unsigned seed, int keep_trees, int* stats_out);
+
+#ifdef FAST_CPU
+// CPU build only: probit = 1 runs BART::pbart's sampler (latent z, sigma fixed at 1); ybin are the 0/1 outcomes and offset is
+// pbart's binaryOffset. probit = 0 is bart_wfit.
+extern "C" void bart_fit_cpu(const uint8_t* qin, const float* yin, const float* wtin, const int* numcut, const float* pgtab,
+                             float* sigma_out, float* trmean_out, uint64_t* trees_out,
+                             int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
+                             unsigned seed, int keep_trees, int* stats_out, int probit, const int* ybin, float offset);
+#endif

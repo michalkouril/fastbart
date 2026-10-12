@@ -3,10 +3,11 @@
 #include <vector>
 #include "bart_kernel.h"
 
+// probit = 0: wbart (y continuous, centred; wt = 1/w^2). probit = 1: pbart (ybin 0/1, offset = binaryOffset, sigma fixed at 1).
 // [[Rcpp::export]]
-Rcpp::List fwbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::NumericVector wt, Rcpp::IntegerVector numcut,
-                      Rcpp::NumericVector pgtab, int ntree, int nskip, int ndpost, double tau, double lambda, double nu,
-                      double sigest, unsigned int seed) {
+Rcpp::List fbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::NumericVector wt, Rcpp::IntegerVector ybin,
+                     Rcpp::IntegerVector numcut, Rcpp::NumericVector pgtab, int ntree, int nskip, int ndpost, double tau,
+                     double lambda, double nu, double sigest, unsigned int seed, int probit, double offset) {
   const int n = q.nrow(), p = q.ncol(), m = ntree;
   std::vector<uint8_t> qv((size_t)n * p);
   for (int v = 0; v < p; v++) for (int i = 0; i < n; i++) qv[(size_t)v * n + i] = (uint8_t)q(i, v);
@@ -15,8 +16,9 @@ Rcpp::List fwbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::Numeri
   std::vector<float> sig(nskip + ndpost), trm(n);
   std::vector<uint64_t> trees((size_t)ndpost * m * NODES);
   int st[8] = {0};
-  bart_wfit(qv.data(), yf.data(), wf.data(), nc.data(), pg.data(), sig.data(), trm.data(), trees.data(), n, p, m, nskip, ndpost,
-            (float)tau, (float)lambda, (float)nu, (float)sigest, seed, 1, st);
+  std::vector<int> yb(ybin.begin(), ybin.end());
+  bart_fit_cpu(qv.data(), yf.data(), wf.data(), nc.data(), pg.data(), sig.data(), trm.data(), trees.data(), n, p, m, nskip, ndpost,
+               (float)tau, (float)lambda, (float)nu, (float)sigest, seed, 1, st, probit, yb.data(), (float)offset);
 
   // per-draw training fits (wbart's yhat.train), split counts (varcount) and BART's tree text format
   Rcpp::NumericMatrix yhat(ndpost, n);

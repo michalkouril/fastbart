@@ -1,5 +1,5 @@
 # Drop-in replacement for BART::wbart (continuous outcome, optional weights w). Same preprocessing and priors as wbart; the
-# MCMC runs in the restructured C++ sampler. Unsupported settings (sparse/DART, x.test, n > 8192, p > 32, ntree > 200) fall
+# MCMC runs in the restructured C++ sampler. Unsupported settings (sparse/DART, x.test, n > 65536, p > 32, ntree > 200) fall
 # back to BART::wbart.
 fwbart <- function(x.train, y.train, x.test = matrix(0.0, 0, 0), sparse = FALSE, xinfo = matrix(0.0, 0, 0), usequants = FALSE,
                    cont = FALSE, rm.const = TRUE, sigest = NA, sigdf = 3, sigquant = .90, k = 2.0, power = 2.0, base = .95,
@@ -8,7 +8,7 @@ fwbart <- function(x.train, y.train, x.test = matrix(0.0, 0, 0), sparse = FALSE,
   temp <- BART::bartModelMatrix(x.train, numcut, usequants = usequants, cont = cont, xinfo = xinfo, rm.const = rm.const)
   X <- temp$X
   n <- length(y.train); p <- ncol(X)
-  if (sparse || length(x.test) > 0 || n > 8192 || p > 32 || ntree > 200 || any(temp$numcut > 255) || length(list(...)) > 0) {
+  if (sparse || length(x.test) > 0 || n > 65536 || p > 32 || ntree > 200 || any(temp$numcut > 255) || length(list(...)) > 0) {
     warning("fwbart: unsupported settings, falling back to BART::wbart")
     return(BART::wbart(x.train, y.train, x.test = x.test, sparse = sparse, xinfo = xinfo, usequants = usequants, cont = cont,
                        rm.const = rm.const, sigest = sigest, sigdf = sigdf, sigquant = sigquant, k = k, power = power, base = base,
@@ -27,8 +27,8 @@ fwbart <- function(x.train, y.train, x.test = matrix(0.0, 0, 0), sparse = FALSE,
   tau <- if (is.na(sigmaf)) (max(yc) - min(yc)) / (2 * k * sqrt(ntree)) else sigmaf / sqrt(ntree)
   seed <- sample.int(.Machine$integer.max, 1)
   ptm <- proc.time()
-  res <- fwbart_cpp(q, yc, 1 / w^2, as.integer(temp$numcut), base / (1 + 0:63)^power, as.integer(ntree), as.integer(nskip),
-                    as.integer(ndpost), tau, lambda, nu, sigest, seed)
+  res <- fbart_cpp(q, yc, 1 / w^2, integer(0), as.integer(temp$numcut), base / (1 + 0:63)^power, as.integer(ntree),
+                   as.integer(nskip), as.integer(ndpost), tau, lambda, nu, sigest, seed, 0L, 0)
   res$proc.time <- proc.time() - ptm
   names(xi) <- colnames(X)
   res$treedraws <- list(cutpoints = xi, trees = res$trees); res$trees <- NULL
