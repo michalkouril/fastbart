@@ -88,23 +88,27 @@ Agreement (posterior mean probability per row): correlation with `BART::pbart` 0
 
 ### Full pipeline: patient bootstrap of a BART g-formula
 
-The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline (also: a CBPS model, a
-`pbart` censoring-hazard model and a forward simulation in R, all unchanged). Swapping `wbart` for `fastbart::fwbart`
-in the titer fits (a one-line change), B = 100 resamples + the original data (101 replicates), 10 replicates in parallel,
-nskip = 1000, ndpost = 100, on an i9-14900K (32 threads):
+The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline, together with a CBPS model,
+a `pbart` censoring-hazard model and a forward simulation in R. B = 100 resamples + the original data (101 replicates),
+10 replicates in parallel, nskip = 1000, ndpost = 100, seed 1, on an i9-14900K (32 threads, R 4.1.2).
 
-| | wall time, 101 replicates |
-|---|---|
-| `BART::wbart` | 24.2 min |
-| `fastbart::fwbart` | 16.0 min |
-| speed-up | **1.51x** |
+| pipeline | wall time | speed-up | machine load during the run |
+|---|---|---|---|
+| original (`BART::wbart`, `BART::pbart`, `pwbart` per draw) | 24.2 min | 1.00x | only this run |
+| titer fits on `fwbart` | 16.0 min | 1.51x | + FPGA builds (load ~4 extra) |
+| `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 8.0 min | ~3.0x | + FPGA builds and another Vivado job (load ~13) |
+| original, rerun | 28.2 min | | + FPGA builds, another Vivado job and benchmarks (load ~14) |
 
-The whole-pipeline gain is smaller than the per-model 2.66x because the titer fits are about 65% of a replicate; the
-`pbart` hazard model (about 17%) and the R simulation (about 14%) are untouched. Pipeline results agree: point estimates
-within 0.015 across all 18 reported differences, bootstrap SDs within about 7%, and identical bootstrap-interval coverage
-of the true values (17 of 18 in both). The fwbart run had extra background load (FPGA builds, load average about 4); a
-back-to-back rerun of the wbart baseline under the same conditions is pending, as is a full run with all three changes
-(`fwbart`, `fpbart`, fast prediction).
+These ace runs did not all see the same background load (the rerun of the original under similar load took 28.2 min,
+not 24.2), so the speed-ups are indicative; a clean back-to-back comparison on an idle machine is below / pending.
+The changes to the pipeline script are the two model calls (`wbart(` to `fastbart::fwbart(`, `pbart(` to
+`fastbart::fpbart(`), the per-draw prediction helpers (`compile_trees`/`predict_draw` instead of re-parsing trees for
+`pwbart`), and an `apply(..., cumprod)` replaced by a column loop.
+
+Pipeline results agree with the original: all 101 replicates succeed; point estimates within 0.027 across all 18 reported
+differences (0.015 with only `fwbart`); bootstrap SDs 0.99-1.09x the original's; identical bootstrap-interval coverage of
+the true values (17 of 18 in both). The remaining differences are Monte Carlo: the fast samplers use their own
+random-number streams. With the original model fits, the fast prediction path alone gives byte-identical output.
 
 ## Source
 
