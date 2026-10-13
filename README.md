@@ -88,6 +88,24 @@ Agreement (posterior mean probability per row): correlation with `BART::pbart` 0
 
 ### Full pipeline: patient bootstrap of a BART g-formula
 
+**Clean back-to-back run (idle machine).** Original pipeline, then the full fast stack (`fwbart` + `fpbart` +
+`compile_trees`/`predict_draw`), same command (B = 100 + the original data = 101 replicates, 10 in parallel,
+nskip = 1000, ndpost = 100, seed 1), on an otherwise idle i7-8700B (6 cores / 12 threads), R 4.5.2 in Docker
+(`rocker/r-ver:4.5.2`), BART 2.9.10, CBPS 0.24, fastbart `98663d8`, single-threaded BLAS (`OPENBLAS_NUM_THREADS=1`):
+
+| pipeline | wall time | speed-up |
+|---|---|---|
+| original | 69.8 min | 1.00x |
+| `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 26.1 min | **2.67x** |
+
+The machine load stayed at the 10 benchmark workers throughout (192 samples, maximum 10.3); no other process used
+more than 50% CPU (the one logged sighting was the load sampler's own `cut` command). Results agree as on the other
+machine: all 101 replicates succeed in both runs, point estimates within 0.027, bootstrap SDs 0.99-1.09x, identical
+coverage (17 of 18). The original pipeline on this machine (R 4.5.2) matches the one on the i9-14900K (R 4.1.2) to
+1.1e-7 across all 1,818 replicate rows (not bit-identical: different BLAS libraries in `lm()`/CBPS).
+
+**Runs on an i9-14900K with background load.**
+
 The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline, together with a CBPS model,
 a `pbart` censoring-hazard model and a forward simulation in R. B = 100 resamples + the original data (101 replicates),
 10 replicates in parallel, nskip = 1000, ndpost = 100, seed 1, on an i9-14900K (32 threads, R 4.1.2).
@@ -99,8 +117,8 @@ a `pbart` censoring-hazard model and a forward simulation in R. B = 100 resample
 | `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 8.0 min | ~3.0x | + FPGA builds and another Vivado job (load ~13) |
 | original, rerun | 28.2 min | | + FPGA builds, another Vivado job and benchmarks (load ~14) |
 
-These ace runs did not all see the same background load (the rerun of the original under similar load took 28.2 min,
-not 24.2), so the speed-ups are indicative; a clean back-to-back comparison on an idle machine is below / pending.
+These runs did not all see the same background load (the rerun of the original under similar load took 28.2 min,
+not 24.2), so these speed-ups are indicative; the clean comparison is the one above.
 The changes to the pipeline script are the two model calls (`wbart(` to `fastbart::fwbart(`, `pbart(` to
 `fastbart::fpbart(`), the per-draw prediction helpers (`compile_trees`/`predict_draw` instead of re-parsing trees for
 `pwbart`), and an `apply(..., cumprod)` replaced by a column loop.
