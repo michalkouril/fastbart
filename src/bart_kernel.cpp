@@ -412,8 +412,8 @@ ITER:
 
       // ---- proposal (depends on the tree only)
       mask_t goodm = 0, nogm = 0;
-      for (int s = 0; s < NODES; s++) {
-#pragma HLS UNROLL
+      for (int s = 0; s < NODES; s++) {   // sequential (one node per cycle): unrolled, this was the FPGA routing hotspot
+#pragma HLS PIPELINE II=1
         bool isleaf = BIT(t.leaf, s), isused = BIT(t.used, s);
         if (isused && isleaf && t.ngv[s] > 0) goodm |= ((mask_t)1 << s);
         if (isused && !isleaf && BIT(t.leaf, (int)t.l[s]) && BIT(t.leaf, (int)t.r[s])) nogm |= ((mask_t)1 << s);

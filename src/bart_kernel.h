@@ -19,9 +19,11 @@
 #endif
 #define PMAX   32        // max predictors
 #define MMAX   200       // max trees
-#define NODES  64        // node slots per tree
+#ifndef NODES
+#define NODES  64        // node slots per tree (the FPGA build uses -DNODES=32)
+#endif
 #ifndef KL
-#define KL     16        // lanes (rows per clock)
+#define KL     16        // lanes (rows per clock; the FPGA build uses -DKL=8)
 #endif
 #ifdef FAST_CPU
 #define NL     (NMAX / KL + 24)   // padded lane stride: avoids every lane mapping to the same cache sets
@@ -41,7 +43,7 @@ typedef ap_fixed<40, 12> fx_t;    // +-2048, 28 fractional bits
 typedef ap_ufixed<20, 4> wt_t;    // [0,16), 16 fractional bits
 typedef ap_fixed<64, 24> acc_t;   // 40 fractional bits
 typedef ap_uint<8> u8;
-typedef ap_uint<64> mask_t;
+typedef ap_uint<NODES> mask_t;   // one bit per node slot
 #endif
 
 extern "C" void bart_wfit(const uint8_t* qin,      // [p][n] cutpoint rank of x: x < xi[v][c] <=> q <= c

@@ -166,8 +166,8 @@ version is the better choice.
 **Design.** `src/bart_kernel.cpp` compiled with Vitis HLS 2023.2 for the U200 (`xilinx_u200_gen3x16_xdma_2_202110_1`,
 XRT 2.17). Same algorithm as `fwbart` (birth/death moves, one data pass per tree using per-row leaf ids), with the data
 pass in fixed point (exact sums), 8 rows per clock cycle, the tree-control arithmetic in single precision and an on-chip
-xoshiro128** generator. FPGA build settings: 32 node slots per tree, 8 lanes, 32-bit node masks, sequential node-mask
-scan (in this repository's source the defaults are the CPU ones; the FPGA variant changes these four settings). Limits:
+xoshiro128** generator. FPGA build settings: 32 node slots per tree and 8 lanes (`-DNODES=32 -DKL=8`; see `fpga/`); in the FPGA build the
+node masks are one bit per slot and are scanned one node per cycle. Limits:
 up to 8,192 rows, 32 predictors, 200 trees.
 
 **Hardware result: six weighted titer models** (ntree = 200, nskip = 1000, ndpost = 100), one kernel at 100 MHz:
@@ -204,7 +204,7 @@ workers.
 | same, **100 MHz** | **met timing (up to 102-105 MHz); runs on the card** |
 
 The node-slot count was reduced from 64 to 32 because trees here use at most 13 nodes (16 slots hit the cap during
-burn-in; 32 never did). The 100 MHz kernel uses about 256k LUTs, 193k flip-flops, 400 URAM, 312 BRAM and 351 DSP blocks
+burn-in; 32 never did). The 100 MHz kernel uses about 257k LUTs, 195k flip-flops, 400 URAM, 312 BRAM and 383 DSP blocks
 (HLS estimate) and is placed across two of the U200's three SLRs; the SLR crossings are the main reason 200 MHz did not
 close. On one occasion loading an xclbin crashed the XRT driver (NULL dereference in `ert_ctrl_unset_xgq`), which needed
 a reboot; after the reboot the same design loaded and ran normally.
@@ -217,4 +217,4 @@ ids in 72-bit URAM words today) so that two or three kernels fit on the card (2-
 ## Source
 
 `src/bart_kernel.cpp` is shared with an FPGA (Vitis HLS) version of the same sampler; in this package it is compiled
-with `-DFAST_CPU`, so the HLS pragmas are ignored. License: GPL (>= 2), as BART.
+with `-DFAST_CPU`, so the HLS pragmas are ignored. The FPGA build (host programs, data export, Makefile) is in `fpga/`. License: GPL (>= 2), as BART.
