@@ -104,21 +104,21 @@ machine: all 101 replicates succeed in both runs, point estimates within 0.027, 
 coverage (17 of 18). The original pipeline on this machine (R 4.5.2) matches the one on the i9-14900K (R 4.1.2) to
 1.1e-7 across all 1,818 replicate rows (not bit-identical: different BLAS libraries in `lm()`/CBPS).
 
-**Runs on an i9-14900K with background load.**
+**Runs on an i9-14900K that was not idle.**
 
 The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline, together with a CBPS model,
 a `pbart` censoring-hazard model and a forward simulation in R. B = 100 resamples + the original data (101 replicates),
 10 replicates in parallel, nskip = 1000, ndpost = 100, seed 1, on an i9-14900K (32 threads, R 4.1.2).
 
-| pipeline | wall time | speed-up | machine load during the run |
-|---|---|---|---|
-| original (`BART::wbart`, `BART::pbart`, `pwbart` per draw) | 24.2 min | 1.00x | only this run |
-| titer fits on `fwbart` | 16.0 min | 1.51x | + FPGA builds (load ~4 extra) |
-| `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 8.0 min | ~3.0x | + FPGA builds and another Vivado job (load ~13) |
-| original, rerun | 28.2 min | | + FPGA builds, another Vivado job and benchmarks (load ~14) |
+| pipeline | wall time | speed-up |
+|---|---|---|
+| original (`BART::wbart`, `BART::pbart`, `pwbart` per draw) | 24.2 min | 1.00x |
+| titer fits on `fwbart` | 16.0 min | 1.51x |
+| `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 8.0 min | ~3.0x |
+| original, rerun | 28.2 min | |
 
-These runs did not all see the same background load (the rerun of the original under similar load took 28.2 min,
-not 24.2), so these speed-ups are indicative; the clean comparison is the one above.
+Other jobs were running on this machine during these runs, and not equally during each (the original pipeline took
+24.2 min in one run and 28.2 min in another), so these speed-ups are indicative; the clean comparison is the one above.
 The changes to the pipeline script are the two model calls (`wbart(` to `fastbart::fwbart(`, `pbart(` to
 `fastbart::fpbart(`), the per-draw prediction helpers (`compile_trees`/`predict_draw` instead of re-parsing trees for
 `pwbart`), and an `apply(..., cumprod)` replaced by a column loop.
