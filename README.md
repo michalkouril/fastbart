@@ -236,4 +236,5 @@ ids in 72-bit URAM words today) so that two or three kernels fit on the card (2-
 ## Source
 
 `src/bart_kernel.cpp` is shared with an FPGA (Vitis HLS) version of the same sampler; in this package it is compiled
-with `-DFAST_CPU`, so the HLS pragmas are ignored. The FPGA build (host programs, data export, Makefile) is in `fpga/`. License: GPL (>= 2), as BART.
+with `-DFAST_CPU`, so the HLS pragmas are ignored. The FPGA build (host programs, data export, Makefile) is in `fpga/`. A CUDA version that runs many fits at once
+(one per thread block), with a GPU bootstrap pipeline, is in `gpu/`. License: GPL (>= 2), as BART.
