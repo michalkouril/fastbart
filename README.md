@@ -156,6 +156,64 @@ differences (0.015 with only `fwbart`); bootstrap SDs 0.99-1.09x the original's;
 the true values (17 of 18 in both). The remaining differences are Monte Carlo: the fast samplers use their own
 random-number streams. With the original model fits, the fast prediction path alone gives byte-identical output.
 
+## FPGA proof of concept (AMD/Xilinx Alveo U200)
+
+The same sampler was also built as an FPGA kernel, to gauge whether an FPGA could speed up the BART fits further.
+Result: it works and is **2.4x faster than one CPU core running `fwbart`** (6.5x faster than `BART::wbart`), but one
+kernel on one card is **about 3-4x slower than 10 CPU cores** running `fwbart` in parallel, so for the bootstrap the CPU
+version is the better choice.
+
+**Design.** `src/bart_kernel.cpp` compiled with Vitis HLS 2023.2 for the U200 (`xilinx_u200_gen3x16_xdma_2_202110_1`,
+XRT 2.17). Same algorithm as `fwbart` (birth/death moves, one data pass per tree using per-row leaf ids), with the data
+pass in fixed point (exact sums), 8 rows per clock cycle, the tree-control arithmetic in single precision and an on-chip
+xoshiro128** generator. FPGA build settings: 32 node slots per tree, 8 lanes, 32-bit node masks, sequential node-mask
+scan (in this repository's source the defaults are the CPU ones; the FPGA variant changes these four settings). Limits:
+up to 8,192 rows, 32 predictors, 200 trees.
+
+**Hardware result: six weighted titer models** (ntree = 200, nskip = 1000, ndpost = 100), one kernel at 100 MHz:
+
+| model | n | U200 | `BART::wbart`, 1 core | correlation with `wbart` | sigma (U200 / `wbart`) |
+|---|---|---|---|---|---|
+| titer 1 | 4,573 | 2.24 s | 15.2 s | 0.9950 | 0.2010 / 0.2008 |
+| titer 2 | 4,078 | 2.10 s | 13.4 s | 0.9941 | 0.1952 / 0.1951 |
+| titer 3 | 3,666 | 1.98 s | 12.6 s | 0.9972 | 0.1932 / 0.1951 |
+| titer 4 | 3,377 | 1.90 s | 11.6 s | 0.9968 | 0.1909 / 0.1909 |
+| titer 5 | 3,208 | 1.85 s | 12.2 s | 0.9971 | 0.1906 / 0.1929 |
+| titer 6 | 3,091 | 1.82 s | 11.6 s | 0.9973 | 0.1875 / 0.1892 |
+| **all 6** | | **11.9 s** | **76.7 s** | | |
+
+`fastbart::fwbart` on one core takes 28.7 s for all six (about 4.8 s per fit; 0.1.0, R's default compiler flags), so the
+card is 2.4x faster than `fwbart` and 6.5x faster than `BART::wbart`. CPU times on an i9-14900K, one core each. Data transfers to and from the
+card add about 3 ms per fit. The card's output is **bit-identical** to the bit-accurate C++ simulation of the kernel
+(same Metropolis-Hastings decisions, sigma draws and fitted values for the same seed) for all six models; agreement with
+`BART::wbart` is within seed-to-seed MCMC variation, as for `fwbart`.
+
+**Throughput.** The card runs one fit at a time, so it is worth about 2.4 CPU cores of `fwbart`. The bootstrap's 606
+titer fits would take about 20 min on the card versus about 5-6 min on 10 cores (`fwbart`, including the slowdown of
+cores sharing a machine). The host CPU is nearly idle while the card works, so the card could run alongside CPU
+workers.
+
+**Getting there (each build: HLS minutes, place-and-route 1.5-4 h):**
+
+| build | outcome |
+|---|---|
+| 16 lanes, 64 node slots, 300 MHz | did not fit (placement: 26,219 CLBs needed, 24,246 free) |
+| 16 lanes, 32 node slots, 300 MHz | unroutable congestion (stopped after 3 h of rip-up; worst path 6.4 ns over) |
+| 16 lanes, 32 node slots, 200 MHz | routing failed (conflicting nets at the per-tree leaf mask) |
+| 8 lanes, 32-bit masks, sequential mask scan, 200 MHz | placed and routed, but 2.6-4 ns over budget; stopped |
+| same, **100 MHz** | **met timing (up to 102-105 MHz); runs on the card** |
+
+The node-slot count was reduced from 64 to 32 because trees here use at most 13 nodes (16 slots hit the cap during
+burn-in; 32 never did). The 100 MHz kernel uses about 256k LUTs, 193k flip-flops, 400 URAM, 312 BRAM and 351 DSP blocks
+(HLS estimate) and is placed across two of the U200's three SLRs; the SLR crossings are the main reason 200 MHz did not
+close. On one occasion loading an xclbin crashed the XRT driver (NULL dereference in `ert_ctrl_unset_xgq`), which needed
+a reboot; after the reboot the same design loaded and ran normally.
+
+**What could make it faster (estimates, not built):** keeping the kernel within one SLR to reach 200-250 MHz (2-2.5x);
+overlapping each tree's control steps with its data pass (about 1.5x); packing the per-row leaf ids more tightly (8-bit
+ids in 72-bit URAM words today) so that two or three kernels fit on the card (2-3x throughput). Together roughly
+0.15-0.3 s per fit for the card, about the throughput of 10-20 CPU cores of `fwbart`.
+
 ## Source
 
 `src/bart_kernel.cpp` is shared with an FPGA (Vitis HLS) version of the same sampler; in this package it is compiled
