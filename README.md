@@ -135,7 +135,8 @@ bootstrap SDs 0.93-1.16x, identical coverage (17 of 18).
 
 The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline, together with a CBPS model,
 a `pbart` censoring-hazard model and a forward simulation in R. B = 100 resamples + the original data (101 replicates),
-10 replicates in parallel, nskip = 1000, ndpost = 100, seed 1, on an i9-14900K (32 threads, R 4.1.2).
+10 replicates in parallel, nskip = 1000, ndpost = 100, seed 1, on an i9-14900K (32 threads, R 4.1.2), fastbart 0.1.0
+(internal generator).
 
 | pipeline | wall time | speed-up |
 |---|---|---|
