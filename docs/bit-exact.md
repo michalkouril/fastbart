@@ -1,6 +1,9 @@
 # Making fwbart / fpbart bit-identical to BART::wbart / BART::pbart
 
-Status: design note only, not implemented. Written against BART 2.9.10 (`cwbart.cpp`, `heterbart.cpp`, `heterbd.cpp`,
+Status: design note; partly implemented. Since 0.2.0 the CPU build draws from R's generator (`unif_rand`, `norm_rand`,
+`exp_rand`, `rchisq`) by default and does its Metropolis-Hastings / mu arithmetic in double, which makes fastbart
+bit-identical across platforms and R versions, but not yet to BART: the order and number of draws, the node orders, the
+summation order and the remaining items below still differ. Written against BART 2.9.10 (`cwbart.cpp`, `heterbart.cpp`, `heterbd.cpp`,
 `heterbartfuns.cpp`, `cpbart.cpp`, `bart.cpp`, `bd.cpp`, `bartfuns.cpp`, `tree.cpp`, `rn.h`, `rtnorm.cpp`) and fastbart
 `98663d8` (`src/bart_kernel.cpp`, `src/glue.cpp`, `R/fwbart.R`, `R/fpbart.R`).
 
@@ -11,9 +14,11 @@ Given the same `set.seed()` and inputs, `fwbart()` returns the same `sigma`, `yh
 them then produces byte-identical output, because R's random stream is left in the same state for the code that follows the
 fits.
 
-"Same" means the same machine, the same R build and the same compiler flags. BART is not bit-reproducible across
-platforms (libm `log`/`exp`/`pow`, FMA contraction, compilers), so matching a run made on another machine (for example
-the original Windows R 4.5.2 runs) is out of scope even for BART itself.
+Measured: the original pipeline (BART 2.9.10) gives the same replicate-0 results on Windows 10 / R 4.5.2, Linux / R 4.5.2
+and Linux / R 4.1.2 to within 5e-14 (the remaining last-bit differences come from outside BART, e.g. BLAS in `lm()` /
+CBPS), so BART's chains do not diverge across these platforms. A bit-exact fastbart should therefore match BART on
+another platform too, not only on the same machine. (An earlier version of this note said BART was not reproducible
+across platforms; that was wrong.) Compiler choices can still matter in principle (FMA contraction on targets with FMA).
 
 The CPU build only (`-DFAST_CPU`). The FPGA kernel cannot be bit-exact (see the last section).
 
@@ -23,8 +28,8 @@ The CPU build only (`-DFAST_CPU`). The FPGA kernel cannot be bit-exact (see the 
 
 Two kinds of difference, both needed:
 
-1. **Random numbers.** fastbart uses its own generator (xoshiro128**, Box-Muller, Marsaglia-Tsang) and does not consume
-   R's stream. BART draws from R's stream (`rn.h`, Rcpp branch: `arn` holds an `Rcpp::RNGScope`; `normal()` =
+1. **Random numbers.** Since 0.2.0 fastbart draws from R's stream by default (`FASTBART_RNG=internal` selects its own
+   xoshiro128** generator), but not in BART's order or number of calls. BART draws from R's stream (`rn.h`, Rcpp branch: `arn` holds an `Rcpp::RNGScope`; `normal()` =
    `norm_rand()`, `uniform()` = `unif_rand()`, `chi_square(df)` = `rchisq(df)`, `exp()` = `exp_rand()`,
    `discrete()` = `rmultinom(1, wts, p, ...)` with weights normalized in `set_wts`).
 2. **Floating-point order.** Sums and update formulas are evaluated in a different order, or in float instead of double.

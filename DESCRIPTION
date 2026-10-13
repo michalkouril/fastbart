@@ -1,7 +1,7 @@
 Package: fastbart
 Type: Package
 Title: Drop-in Replacement for BART::wbart (Leaf-Index Restructured Sampler)
-Version: 0.1.0
+Version: 0.2.0
 Description: Same sampler as BART::wbart, restructured so one data pass per tree computes every sufficient statistic.
 License: GPL (>= 2)
 Imports: Rcpp, BART

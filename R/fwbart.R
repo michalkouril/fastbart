@@ -25,10 +25,11 @@ fwbart <- function(x.train, y.train, x.test = matrix(0.0, 0, 0), sparse = FALSE,
     lambda <- (sigest * sigest * qchisq(1.0 - sigquant, nu)) / nu
   } else sigest <- sqrt(lambda)
   tau <- if (is.na(sigmaf)) (max(yc) - min(yc)) / (2 * k * sqrt(ntree)) else sigmaf / sqrt(ntree)
-  seed <- sample.int(.Machine$integer.max, 1)
+  rng <- fastbart_rng()
+  seed <- if (rng == "internal") sample.int(.Machine$integer.max, 1) else 0L
   ptm <- proc.time()
   res <- fbart_cpp(q, yc, 1 / w^2, integer(0), as.integer(temp$numcut), base / (1 + 0:63)^power, as.integer(ntree),
-                   as.integer(nskip), as.integer(ndpost), tau, lambda, nu, sigest, seed, 0L, 0)
+                   as.integer(nskip), as.integer(ndpost), tau, lambda, nu, sigest, seed, 0L, 0, as.integer(rng == "R"))
   res$proc.time <- proc.time() - ptm
   names(xi) <- colnames(X)
   res$treedraws <- list(cutpoints = xi, trees = res$trees); res$trees <- NULL

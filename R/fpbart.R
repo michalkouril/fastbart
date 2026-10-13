@@ -18,10 +18,12 @@ fpbart <- function(x.train, y.train, x.test = matrix(0.0, 0, 0), sparse = FALSE,
   q <- vapply(seq_len(p), function(v) findInterval(X[, v], xi[[v]]), integer(n))     # x < xi[c] (0-based)  <=>  q <= c
   if (!is.matrix(q)) q <- matrix(q, nrow = n)
   tau <- 3 / (k * sqrt(ntree))
-  seed <- sample.int(.Machine$integer.max, 1)
+  rng <- fastbart_rng()
+  seed <- if (rng == "internal") sample.int(.Machine$integer.max, 1) else 0L
   ptm <- proc.time()
   res <- fbart_cpp(q, numeric(n), rep(1, n), as.integer(y.train), as.integer(temp$numcut), base / (1 + 0:63)^power,
-                   as.integer(ntree), as.integer(nskip), as.integer(ndpost), tau, 1, 3, 1, seed, 1L, binaryOffset)
+                   as.integer(ntree), as.integer(nskip), as.integer(ndpost), tau, 1, 3, 1, seed, 1L, binaryOffset,
+                   as.integer(rng == "R"))
   res$proc.time <- proc.time() - ptm
   res$sigma <- NULL; res$yhat.train.mean <- NULL
   names(xi) <- colnames(X)

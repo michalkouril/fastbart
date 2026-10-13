@@ -16,6 +16,20 @@ ct <- compile_trees(fit)                                             # any wbart
 f7 <- predict_draw(ct, newdata, 7)                                   # = pwbart(newdata, fit$treedraws, fit$mu)[7, ]
 ```
 
+## Random numbers and reproducibility
+
+By default (since 0.2.0) `fwbart` and `fpbart` draw from R's own generator (`unif_rand`, `norm_rand`, `exp_rand`,
+`rchisq`), like BART: results follow `set.seed()` and are **bit-identical across platforms and R versions**. Tested:
+three bootstrap replicates of the g-formula pipeline below gave identical values (162 of 162) on Windows 10 / R 4.5.2,
+Linux / R 4.5.2 and Linux / R 4.1.2. They are still not bit-identical to `BART::wbart` / `pbart` (the sampler consumes the
+random numbers in a different order); see `docs/bit-exact.md`.
+
+The built-in xoshiro128** generator of 0.1.0 is still available with the environment variable `FASTBART_RNG=internal`
+(`fastbart_rng()` reports the current setting). It is a little faster (about 3% on the hazard model, up to about 15% on the
+titer models), but its normal draws use the platform's single-precision math library, so results then differ between
+platforms by Monte Carlo error (e.g. Windows vs Linux: estimates within 0.036, the same size as fast vs original on one
+machine). All benchmarks below were measured with 0.1.0, i.e. with the internal generator.
+
 ## Fast single-draw prediction
 
 Simulations that step through posterior draws one at a time (e.g. a g-formula forward simulation) often call

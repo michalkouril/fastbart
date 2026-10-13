@@ -1,4 +1,6 @@
 #include <Rcpp.h>
+#include <R_ext/Random.h>
+#include <Rmath.h>
 #include <sstream>
 #include <vector>
 #include "bart_kernel.h"
@@ -7,7 +9,7 @@
 // [[Rcpp::export]]
 Rcpp::List fbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::NumericVector wt, Rcpp::IntegerVector ybin,
                      Rcpp::IntegerVector numcut, Rcpp::NumericVector pgtab, int ntree, int nskip, int ndpost, double tau,
-                     double lambda, double nu, double sigest, unsigned int seed, int probit, double offset) {
+                     double lambda, double nu, double sigest, unsigned int seed, int probit, double offset, int use_r_rng) {
   const int n = q.nrow(), p = q.ncol(), m = ntree;
   std::vector<uint8_t> qv((size_t)n * p);
   for (int v = 0; v < p; v++) for (int i = 0; i < n; i++) qv[(size_t)v * n + i] = (uint8_t)q(i, v);
@@ -17,6 +19,10 @@ Rcpp::List fbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::Numeric
   std::vector<uint64_t> trees((size_t)ndpost * m * NODES);
   int st[8] = {0};
   std::vector<int> yb(ybin.begin(), ybin.end());
+  // R's generator (follows set.seed, platform-independent) unless use_r_rng == 0; Rcpp's RNGScope wraps this function.
+  struct RChisq { static double draw(double df) { return R::rchisq(df); } };
+  if (use_r_rng) bart_set_rng(unif_rand, norm_rand, exp_rand, RChisq::draw);
+  else bart_set_rng(nullptr, nullptr, nullptr, nullptr);
   bart_fit_cpu(qv.data(), yf.data(), wf.data(), nc.data(), pg.data(), sig.data(), trm.data(), trees.data(), n, p, m, nskip, ndpost,
                (float)tau, (float)lambda, (float)nu, (float)sigest, seed, 1, st, probit, yb.data(), (float)offset);
 

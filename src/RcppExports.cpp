@@ -11,8 +11,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // fbart_cpp
-Rcpp::List fbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::NumericVector wt, Rcpp::IntegerVector ybin, Rcpp::IntegerVector numcut, Rcpp::NumericVector pgtab, int ntree, int nskip, int ndpost, double tau, double lambda, double nu, double sigest, unsigned int seed, int probit, double offset);
-RcppExport SEXP _fastbart_fbart_cpp(SEXP qSEXP, SEXP ySEXP, SEXP wtSEXP, SEXP ybinSEXP, SEXP numcutSEXP, SEXP pgtabSEXP, SEXP ntreeSEXP, SEXP nskipSEXP, SEXP ndpostSEXP, SEXP tauSEXP, SEXP lambdaSEXP, SEXP nuSEXP, SEXP sigestSEXP, SEXP seedSEXP, SEXP probitSEXP, SEXP offsetSEXP) {
+Rcpp::List fbart_cpp(Rcpp::IntegerMatrix q, Rcpp::NumericVector y, Rcpp::NumericVector wt, Rcpp::IntegerVector ybin, Rcpp::IntegerVector numcut, Rcpp::NumericVector pgtab, int ntree, int nskip, int ndpost, double tau, double lambda, double nu, double sigest, unsigned int seed, int probit, double offset, int use_r_rng);
+RcppExport SEXP _fastbart_fbart_cpp(SEXP qSEXP, SEXP ySEXP, SEXP wtSEXP, SEXP ybinSEXP, SEXP numcutSEXP, SEXP pgtabSEXP, SEXP ntreeSEXP, SEXP nskipSEXP, SEXP ndpostSEXP, SEXP tauSEXP, SEXP lambdaSEXP, SEXP nuSEXP, SEXP sigestSEXP, SEXP seedSEXP, SEXP probitSEXP, SEXP offsetSEXP, SEXP use_r_rngSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -32,7 +32,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< unsigned int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< int >::type probit(probitSEXP);
     Rcpp::traits::input_parameter< double >::type offset(offsetSEXP);
-    rcpp_result_gen = Rcpp::wrap(fbart_cpp(q, y, wt, ybin, numcut, pgtab, ntree, nskip, ndpost, tau, lambda, nu, sigest, seed, probit, offset));
+    Rcpp::traits::input_parameter< int >::type use_r_rng(use_r_rngSEXP);
+    rcpp_result_gen = Rcpp::wrap(fbart_cpp(q, y, wt, ybin, numcut, pgtab, ntree, nskip, ndpost, tau, lambda, nu, sigest, seed, probit, offset, use_r_rng));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -64,7 +65,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_fastbart_fbart_cpp", (DL_FUNC) &_fastbart_fbart_cpp, 16},
+    {"_fastbart_fbart_cpp", (DL_FUNC) &_fastbart_fbart_cpp, 17},
     {"_fastbart_compile_trees_cpp", (DL_FUNC) &_fastbart_compile_trees_cpp, 2},
     {"_fastbart_predict_draw_cpp", (DL_FUNC) &_fastbart_predict_draw_cpp, 4},
     {NULL, NULL, 0}

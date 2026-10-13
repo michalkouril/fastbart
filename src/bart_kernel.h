@@ -62,4 +62,7 @@ extern "C" void bart_fit_cpu(const uint8_t* qin, const float* yin, const float* 
                              float* sigma_out, float* trmean_out, uint64_t* trees_out,
                              int n, int p, int m, int nskip, int ndpost, float tau, float lambda, float nu, float sigest,
                              unsigned seed, int keep_trees, int* stats_out, int probit, const int* ybin, float offset);
+// Random numbers: install R's generator (unif_rand, norm_rand, exp_rand, rchisq) before a fit; pass nulls to use the
+// built-in xoshiro128** generator (seeded by `seed`).
+extern "C" void bart_set_rng(double (*u)(), double (*nrm)(), double (*e)(), double (*chisq)(double));
 #endif

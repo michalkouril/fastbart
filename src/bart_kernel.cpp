@@ -1,5 +1,8 @@
 #include "bart_kernel.h"
 #include <cmath>
+#ifdef FAST_CPU
+#pragma GCC diagnostic ignored "-Wunused-label"   // loop labels are for the FPGA (HLS) build
+#endif
 #if defined(__SYNTHESIS__)
 #include <hls_math.h>
 #define LOGF(x)  hls::logf(x)
@@ -20,16 +23,53 @@
 #define BIT(m, i) ((m)[i])
 #endif
 
-// ---------------------------------------------------------------- RNG (xoshiro128**, Box-Muller, Marsaglia-Tsang)
+// ---------------------------------------------------------------- control-math precision
+// CPU build: double, with libm's double log/sqrt (as BART), so that results do not depend on the platform's float libm.
+// FPGA build: float.
+#ifdef FAST_CPU
+typedef double ctl_t;
+#define LOGC(x)  log(x)
+#define SQRTC(x) sqrt(x)
+#else
+typedef float ctl_t;
+#define LOGC(x)  LOGF(x)
+#define SQRTC(x) SQRTF(x)
+#endif
+
+// ---------------------------------------------------------------- RNG
+// Default in the CPU build: R's generator (unif_rand / norm_rand / exp_rand / rchisq), installed by the R glue through
+// bart_set_rng(); it is platform-independent and follows set.seed(). Otherwise (FPGA build, or FASTBART_RNG=internal):
+// xoshiro128** with Box-Muller normals and a Marsaglia-Tsang gamma, seeded from `seed`.
 struct Rng { uint32_t s0, s1, s2, s3; };
+#ifdef FAST_CPU
+static double (*g_unif)() = nullptr;
+static double (*g_norm)() = nullptr;
+static double (*g_exp)() = nullptr;
+static double (*g_chisq)(double) = nullptr;
+extern "C" void bart_set_rng(double (*u)(), double (*nrm)(), double (*e)(), double (*chisq)(double)) {
+  g_unif = u; g_norm = nrm; g_exp = e; g_chisq = chisq;
+}
+#endif
 static inline uint32_t rotl(uint32_t x, int k) { return (x << k) | (x >> (32 - k)); }
 static inline uint32_t rng_next(Rng& r) {
   uint32_t res = rotl(r.s1 * 5, 7) * 9, t = r.s1 << 9;
   r.s2 ^= r.s0; r.s3 ^= r.s1; r.s1 ^= r.s2; r.s0 ^= r.s3; r.s2 ^= t; r.s3 = rotl(r.s3, 11);
   return res;
 }
-static inline float unif(Rng& r) { return ((float)(rng_next(r) >> 8) + 0.5f) * (1.0f / 16777216.0f); }   // (0,1)
-static inline float rnorm(Rng& r) { float u1 = unif(r), u2 = unif(r); return SQRTF(-2.f * LOGF(u1)) * COSF(6.28318531f * u2); }
+static inline float unif_x(Rng& r) { return ((float)(rng_next(r) >> 8) + 0.5f) * (1.0f / 16777216.0f); }   // (0,1)
+static inline float rnorm_x(Rng& r) { float u1 = unif_x(r), u2 = unif_x(r); return SQRTF(-2.f * LOGF(u1)) * COSF(6.28318531f * u2); }
+static inline ctl_t unif(Rng& r) {
+#ifdef FAST_CPU
+  if (g_unif) return g_unif();                    // R's unif_rand: (0,1)
+#endif
+  return unif_x(r);
+}
+static inline ctl_t rnorm(Rng& r) {
+#ifdef FAST_CPU
+  if (g_norm) return g_norm();
+#endif
+  return rnorm_x(r);
+}
 static double rgamma_big(Rng& r, double a) {        // shape a >= 1, rate 1
   double d = a - 1.0 / 3.0, c = 1.0 / SQRTD(9.0 * d);
   for (int it = 0; it < 32; it++) {
@@ -235,7 +275,7 @@ static int count_goodvars(const Tree& t, int x, const int nc[PMAX], int p) {
   return g;
 }
 
-static inline float lh(float b, float M, float t2) { float k = b * t2 + 1.f; return -0.5f * LOGF(k) + 0.5f * M * M * t2 / k; }
+static inline ctl_t lh(ctl_t b, ctl_t M, ctl_t t2) { ctl_t k = b * t2 + 1; return -0.5 * LOGC(k) + 0.5 * M * M * t2 / k; }
 
 #ifdef FAST_CPU
 // truncated normal N(mean, 1) restricted to > tau (BART's rtnorm)
@@ -246,7 +286,7 @@ static double rtnorm(double mean, double tau, Rng& r) {
     do { z = rnorm(r); } while (z < tau);
   } else {
     double lambda = 0.5 * (tau + sqrt(tau * tau + 4.0));
-    do { z = -log((double)unif(r)) / lambda + tau; } while ((double)unif(r) > exp(-0.5 * (z - lambda) * (z - lambda)));
+    do { z = (g_exp ? g_exp() : -log((double)unif(r))) / lambda + tau; } while ((double)unif(r) > exp(-0.5 * (z - lambda) * (z - lambda)));
   }
   return z + mean;
 }
@@ -299,7 +339,7 @@ extern "C" void bart_wfit(const uint8_t* qin, const float* yin, const float* wti
 #pragma HLS BIND_STORAGE variable=LO type=ram_2p impl=uram
 
   int nc[PMAX];
-  float PG[NODES];
+  ctl_t PG[NODES];
 #pragma HLS ARRAY_PARTITION variable=nc complete
 #pragma HLS ARRAY_PARTITION variable=PG complete
   for (int v = 0; v < PMAX; v++) nc[v] = v < p ? numcut[v] : 0;
@@ -345,7 +385,7 @@ INIT_TREES:
     for (int i = 0; i < n; i++) Y[i % KL][i / KL] = ybin[i] == 0 ? -rtnorm(0., offset, rng) : rtnorm(0., -offset, rng);
 #endif
 
-  const float t2 = tau * tau, a_prior = 1.f / t2, pb = 0.5f;
+  const ctl_t t2 = (ctl_t)tau * tau, a_prior = 1 / t2, pb = 0.5;
   double sigma = sigest;
   int n_birth = 0, n_death = 0, n_cap = 0;
   PrevUpd pu; pu.mode = 0; pu.nx = pu.v = pu.c = pu.L = pu.R = pu.l = pu.r = 0;
@@ -355,7 +395,7 @@ INIT_TREES:
 ITER:
   for (int it = 0; it < total; it++) {
 #pragma HLS LOOP_TRIPCOUNT min=1100 max=1100
-    const float inv_s2 = (float)(1.0 / (sigma * sigma));
+    const ctl_t inv_s2 = (ctl_t)(1.0 / (sigma * sigma));
   TREES:
     for (int j = 0; j < m; j++) {
 #pragma HLS LOOP_TRIPCOUNT min=200 max=200
@@ -380,13 +420,13 @@ ITER:
       }
       int ngood = popc(goodm), nnogs = popc(nogm);
       bool single = (t.used == (mask_t)1);
-      float PBx = ngood == 0 ? 0.f : (single ? 1.f : pb);
+      ctl_t PBx = ngood == 0 ? 0 : (single ? 1 : pb);
       CurProp cp; cp.mode = 0; cp.nx = 0; cp.v = 0; cp.c = 0;
       for (int s = 0; s < NODES; s++) {
 #pragma HLS UNROLL
         cp.th[s] = (fx_t)t.th[s];
       }
-      float pr = 0.f;
+      ctl_t pr = 0;
       int bL = 0, bU = 0;
       bool birth = unif(rng) < PBx;
       if (birth) {
@@ -396,30 +436,30 @@ ITER:
         if (bU >= bL && (int)t.d[nx] + 1 < MAXDEPTH) {        // a "bad" variable gives an empty child: always rejected in BART
           int c = bL + (int)(unif(rng) * (bU - bL + 1)); if (c > bU) c = bU;
           int dnx = t.d[nx];
-          float PGnx = PG[dnx], PGly, PGry;
+          ctl_t PGnx = PG[dnx], PGly, PGry;
           if (t.ngv[nx] > 1) { PGly = PGry = PG[dnx + 1]; }
-          else { PGly = (c - 1 < bL) ? 0.f : PG[dnx + 1]; PGry = (bU < c + 1) ? 0.f : PG[dnx + 1]; }
-          float PDy = (ngood > 1) ? 1.f - pb : ((PGry == 0.f && PGly == 0.f) ? 1.f : 1.f - pb);
-          float Pnogy;
-          if (nx == 0) Pnogy = 1.f;
+          else { PGly = (c - 1 < bL) ? 0 : PG[dnx + 1]; PGry = (bU < c + 1) ? 0 : PG[dnx + 1]; }
+          ctl_t PDy = (ngood > 1) ? 1 - pb : ((PGry == 0 && PGly == 0) ? 1 : 1 - pb);
+          ctl_t Pnogy;
+          if (nx == 0) Pnogy = 1;
           else {
             int pa = t.par[nx];
             bool panog = BIT(t.leaf, (int)t.l[pa]) && BIT(t.leaf, (int)t.r[pa]);
-            Pnogy = panog ? 1.f / nnogs : 1.f / (nnogs + 1.f);
+            Pnogy = panog ? (ctl_t)1 / nnogs : (ctl_t)1 / (nnogs + 1);
           }
-          float Pbotx = 1.f / ngood;
-          pr = (PGnx * (1.f - PGly) * (1.f - PGry) * PDy * Pnogy) / ((1.f - PGnx) * Pbotx * PBx);
+          ctl_t Pbotx = (ctl_t)1 / ngood;
+          pr = (PGnx * (1 - PGly) * (1 - PGry) * PDy * Pnogy) / ((1 - PGnx) * Pbotx * PBx);
           cp.mode = 1; cp.nx = nx; cp.v = v; cp.c = c;
         }
       } else {
         int nx = select_kth(nogm, (int)(unif(rng) * nnogs));
         int dny = t.d[nx], l = t.l[nx], r = t.r[nx];
-        float PGny = PG[dny];
-        float PGlx = t.ngv[l] > 0 ? PG[dny + 1] : 0.f, PGrx = t.ngv[r] > 0 ? PG[dny + 1] : 0.f;
-        float PBy = (nx == 0) ? 1.f : pb;
+        ctl_t PGny = PG[dny];
+        ctl_t PGlx = t.ngv[l] > 0 ? PG[dny + 1] : 0, PGrx = t.ngv[r] > 0 ? PG[dny + 1] : 0;
+        ctl_t PBy = (nx == 0) ? 1 : pb;
         int ng2 = ngood - (t.ngv[l] > 0) - (t.ngv[r] > 0) + 1;
-        float Pboty = 1.f / ng2, PDx = 1.f - PBx, Pnogx = 1.f / nnogs;
-        pr = ((1.f - PGny) * PBy * Pboty) / (PGny * (1.f - PGlx) * (1.f - PGrx) * PDx * Pnogx);
+        ctl_t Pboty = (ctl_t)1 / ng2, PDx = 1 - PBx, Pnogx = (ctl_t)1 / nnogs;
+        pr = ((1 - PGny) * PBy * Pboty) / (PGny * (1 - PGlx) * (1 - PGrx) * PDx * Pnogx);
         cp.mode = 2; cp.nx = nx;
       }
 
@@ -439,12 +479,12 @@ ITER:
 #pragma HLS UNROLL
         S0[s] = st.S0[s]; S1[s] = st.S1[s];
       }
-      float lu = LOGF(unif(rng));
+      ctl_t lu = LOGC(unif(rng));
       if (cp.mode == 1) {
         if (st.nL >= 5 && st.nR >= 5) {
-          float bl = (float)st.sL0 * inv_s2, Ml = (float)st.sL1 * inv_s2, br = (float)st.sR0 * inv_s2, Mr = (float)st.sR1 * inv_s2;
-          float lalpha = LOGF(pr) + lh(bl, Ml, t2) + lh(br, Mr, t2) - lh(bl + br, Ml + Mr, t2);
-          if (lalpha > 0.f) lalpha = 0.f;
+          ctl_t bl = (ctl_t)st.sL0 * inv_s2, Ml = (ctl_t)st.sL1 * inv_s2, br = (ctl_t)st.sR0 * inv_s2, Mr = (ctl_t)st.sR1 * inv_s2;
+          ctl_t lalpha = LOGC(pr) + lh(bl, Ml, t2) + lh(br, Mr, t2) - lh(bl + br, Ml + Mr, t2);
+          if (lalpha > 0) lalpha = 0;
           if (lu < lalpha) {
             int L = first_free(t.used, -1), R = first_free(t.used, L);
             if (L < 0 || R < 0) n_cap++;
@@ -464,9 +504,9 @@ ITER:
         }
       } else if (cp.mode == 2) {
         int nx = cp.nx, l = t.l[nx], r = t.r[nx];
-        float bl = (float)S0[l] * inv_s2, Ml = (float)S1[l] * inv_s2, br = (float)S0[r] * inv_s2, Mr = (float)S1[r] * inv_s2;
-        float lalpha = LOGF(pr) + lh(bl + br, Ml + Mr, t2) - lh(bl, Ml, t2) - lh(br, Mr, t2);
-        if (lalpha > 0.f) lalpha = 0.f;
+        ctl_t bl = (ctl_t)S0[l] * inv_s2, Ml = (ctl_t)S1[l] * inv_s2, br = (ctl_t)S0[r] * inv_s2, Mr = (ctl_t)S1[r] * inv_s2;
+        ctl_t lalpha = LOGC(pr) + lh(bl + br, Ml + Mr, t2) - lh(bl, Ml, t2) - lh(br, Mr, t2);
+        if (lalpha > 0) lalpha = 0;
         if (lu < lalpha) {
           S0[nx] = S0[l] + S0[r]; S1[nx] = S1[l] + S1[r];
           t.used &= ~(((mask_t)1 << l) | ((mask_t)1 << r));
@@ -480,10 +520,10 @@ ITER:
     DRMU:
       for (int s = 0; s < NODES; s++) {
 #pragma HLS PIPELINE II=1
-        float z = rnorm(rng);
+        ctl_t z = rnorm(rng);
         if (BIT(t.leaf, s) && BIT(t.used, s)) {
-          float b = (float)S0[s] * inv_s2, M = (float)S1[s] * inv_s2;
-          t.th[s] = M / (a_prior + b) + z / SQRTF(a_prior + b);
+          ctl_t b = (ctl_t)S0[s] * inv_s2, M = (ctl_t)S1[s] * inv_s2;
+          t.th[s] = (float)(M / (a_prior + b) + z / SQRTC(a_prior + b));
         }
       }
       for (int s = 0; s < NODES; s++) {
@@ -509,6 +549,10 @@ ITER:
 #endif
     {
       double rss = (double)st.rss;
+#ifdef FAST_CPU
+      if (g_chisq) sigma = SQRTD((nu * lambda + rss) / g_chisq(n + nu));       // R's rchisq, as BART
+      else
+#endif
       sigma = SQRTD((nu * lambda + rss) / (2.0 * rgamma_big(rng, (n + nu) / 2.0)));
     }
     sigma_out[it] = (float)sigma;
