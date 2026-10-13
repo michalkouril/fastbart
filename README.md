@@ -28,7 +28,7 @@ The built-in xoshiro128** generator of 0.1.0 is still available with the environ
 (`fastbart_rng()` reports the current setting). It is a little faster (about 3% on the hazard model, up to about 15% on the
 titer models), but its normal draws use the platform's single-precision math library, so results then differ between
 platforms by Monte Carlo error (e.g. Windows vs Linux: estimates within 0.036, the same size as fast vs original on one
-machine). All benchmarks below were measured with 0.1.0, i.e. with the internal generator.
+machine). The benchmarks below say which generator they used.
 
 ## Fast single-draw prediction
 
@@ -105,7 +105,8 @@ Agreement (posterior mean probability per row): correlation with `BART::pbart` 0
 **Clean back-to-back run (idle machine).** Original pipeline, then the full fast stack (`fwbart` + `fpbart` +
 `compile_trees`/`predict_draw`), same command (B = 100 + the original data = 101 replicates, 10 in parallel,
 nskip = 1000, ndpost = 100, seed 1), on an otherwise idle i7-8700B (6 cores / 12 threads), R 4.5.2 in Docker
-(`rocker/r-ver:4.5.2`), BART 2.9.10, CBPS 0.24, fastbart `98663d8`, single-threaded BLAS (`OPENBLAS_NUM_THREADS=1`):
+(`rocker/r-ver:4.5.2`), BART 2.9.10, CBPS 0.24, fastbart 0.1.0 (`98663d8`, internal generator), single-threaded BLAS
+(`OPENBLAS_NUM_THREADS=1`):
 
 | pipeline | wall time | speed-up |
 |---|---|---|
@@ -117,6 +118,18 @@ more than 50% CPU (the one logged sighting was the load sampler's own `cut` comm
 machine: all 101 replicates succeed in both runs, point estimates within 0.027, bootstrap SDs 0.99-1.09x, identical
 coverage (17 of 18). The original pipeline on this machine (R 4.5.2) matches the one on the i9-14900K (R 4.1.2) to
 1.1e-7 across all 1,818 replicate rows (not bit-identical: different BLAS libraries in `lm()`/CBPS).
+
+**Back-to-back run on a nearly idle i9-14900K** (32 threads), R 4.1.2, BART 2.9.10, CBPS 0.24, fastbart 0.2.0 with the
+default generator (R's), same command:
+
+| pipeline | wall time | speed-up |
+|---|---|---|
+| original | 24.5 min | 1.00x |
+| `fwbart` + `fpbart` + `compile_trees`/`predict_draw` (R's generator) | 7.5 min | **3.27x** |
+
+Nearly idle: one unrelated process used about 1.6 of the 32 threads throughout both runs (same load for both); the
+machine was otherwise quiet. Results agree as above: all replicates succeed in both runs, point estimates within 0.022,
+bootstrap SDs 0.93-1.16x, identical coverage (17 of 18).
 
 **Runs on an i9-14900K that was not idle.**
 
