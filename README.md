@@ -131,6 +131,25 @@ Nearly idle: one unrelated process used about 1.6 of the 32 threads throughout b
 machine was otherwise quiet. Results agree as above: all replicates succeed in both runs, point estimates within 0.022,
 bootstrap SDs 0.93-1.16x, identical coverage (17 of 18).
 
+**Back-to-back runs on an idle Core Ultra 7 268V laptop** (Lunar Lake, 8 cores, on AC power, performance profile),
+R 4.5.2 (Ubuntu package), BART 2.9.10, CBPS 0.24, fastbart 0.2.0 with the default generator (R's), single-threaded BLAS,
+same command. The four runs alternate (original, fast, fast, original) so that warm-up and heat affect both pipelines
+equally:
+
+| run | pipeline | wall time |
+|---|---|---|
+| 1 | original | 49.7 min |
+| 2 | `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 13.9 min |
+| 3 | `fwbart` + `fpbart` + `compile_trees`/`predict_draw` | 14.0 min |
+| 4 | original | 49.5 min |
+| | **speed-up (49.6 / 13.95 min)** | **3.56x** |
+
+The CPU averaged 3.2 GHz at 77-81 C in every run (no sustained throttling); the machine load stayed at the 10 benchmark
+workers. One sample in run 1 caught the desktop's file indexer at full CPU (it was then stopped). Repeated runs give
+identical results, and the fast runs are bit-identical to the fastbart 0.2.0 run on the i7-8700B above (R 4.5.2 in
+Docker), as the default generator makes them. Results agree with the original as on the other machines (estimates within
+0.022, bootstrap SDs 0.93-1.16x, coverage 17 of 18 in both).
+
 **Runs on an i9-14900K that was not idle.**
 
 The six titer models above are refit on every bootstrap resample of a BART g-formula pipeline, together with a CBPS model,
