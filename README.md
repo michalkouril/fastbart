@@ -233,6 +233,43 @@ overlapping each tree's control steps with its data pass (about 1.5x); packing t
 ids in 72-bit URAM words today) so that two or three kernels fit on the card (2-3x throughput). Together roughly
 0.15-0.3 s per fit for the card, about the throughput of 10-20 CPU cores of `fwbart`.
 
+## GPU (CUDA): many fits at once
+
+One BART fit is a long chain of small dependent steps, which a GPU cannot speed up; but a bootstrap has hundreds of
+independent fits, and those it can run together. `gpu/` contains a CUDA version of the same sampler that fits many
+models at once, **one fit per thread block** (exact fixed-point sums combined per leaf with warp shuffles; one thread per
+block runs the serial tree control), and a GPU version of the bootstrap pipeline: (1) prep on the CPU (each replicate's
+resample, CBPS, the hazard model with `fpbart`, the titer training sets), (2) all titer fits of all replicates in one GPU
+batch, (3) finish on the CPU (simulation with `compile_trees`/`predict_draw`, summaries). The hazard model stays on the
+CPU.
+
+**Throughput, RTX 2080 Ti:** the bootstrap's 606 titer fits (101 replicates x 6 models) take 48-51 s, about 12 fits
+per second, the throughput of roughly 60 CPU cores running `fwbart` (4.8 s per fit per core). A single fit alone is slow
+on the GPU (several seconds; the GPU only pays off with many fits).
+
+**Full bootstrap, back to back on the i9-14900K + RTX 2080 Ti** (R 4.1.2, BART 2.9.10, CBPS 0.24, fastbart 0.2.0 with R's
+generator for the CPU parts, 10 CPU workers, same command; GPU runs first and last to bracket the CPU runs):
+
+| run | pipeline | wall time |
+|---|---|---|
+| 1 | GPU pipeline (prep 1.9 + GPU 1.1 + finish 1.6 min) | 4.6 min |
+| 2 | `fwbart` + `fpbart` + `compile_trees`/`predict_draw`, CPU only | 7.9 min |
+| 3 | original | 26.6 min |
+| 4 | GPU pipeline (prep 2.0 + GPU 1.2 + finish 1.7 min) | 4.8 min |
+
+The GPU pipeline (4.7 min on average) is **5.7x faster than the original and 1.7x faster than the CPU-only fast
+version**. The machine was not idle: another Vivado build ran throughout (machine load up to 17 with the 10 benchmark
+workers); the two GPU runs, first and last, took nearly the same time, so the background load affected all four runs
+similarly. With the BART fits on the GPU, the CPU phases are now about three quarters of the time; using more CPU workers
+for them should shorten it further (not measured).
+
+Results: all replicates succeed; the two GPU runs give identical results (deterministic); against the original, point
+estimates within 0.035, bootstrap SDs 0.89-1.09x, the same coverage (17 of 18). The GPU sampler has its own random-number
+generator (xoshiro128**), so its results are not bit-identical to `fwbart`, and the differences are the chain-to-chain
+variation that two `fwbart` runs with different generators also show (E[Y] differences up to about 0.04 for a single
+replicate, averaging about 0.009). Prototype limits: titer models only (up to 32 node slots per tree, 32 predictors),
+about 7 MB of GPU memory per fit for the kept tree draws.
+
 ## Source
 
 `src/bart_kernel.cpp` is shared with an FPGA (Vitis HLS) version of the same sampler; in this package it is compiled
